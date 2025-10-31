@@ -10,7 +10,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { supabase, type Batch, type TraceEvent } from "@/lib/supabase";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getBatchByBatchId, getTraceEventsByBatchId, type Batch, type TraceEvent } from "@/lib/firebase";
 import {
   formatDate,
   getEventTypeIcon,
@@ -30,8 +32,17 @@ import {
   ExternalLink,
   Loader2,
   ArrowLeft,
+  Sparkles,
+  Package,
+  Calendar,
+  Share2,
+  Printer,
+  Copy,
+  Link as LinkIcon
 } from "lucide-react";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 export default function ConsumerBatchPage() {
   const params = useParams();
@@ -57,30 +68,20 @@ export default function ConsumerBatchPage() {
     setError(null);
 
     try {
-      // Fetch batch data
-      const { data: batchData, error: batchError } = await supabase
-        .from("batches")
-        .select("*")
-        .eq("batch_id", batchId)
-        .single();
+      // Fetch batch data from Firebase
+      const batchResult = await getBatchByBatchId(batchId);
 
-      if (batchError) {
+      if (!batchResult.success || !batchResult.data) {
         throw new Error("Batch not found");
       }
 
-      setBatch(batchData);
+      setBatch(batchResult.data);
 
-      // Fetch trace events
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("trace_events")
-        .select("*")
-        .eq("batch_id", batchId)
-        .order("timestamp", { ascending: true });
+      // Fetch trace events from Firebase
+      const eventsResult = await getTraceEventsByBatchId(batchId);
 
-      if (eventsError) {
-        console.error("Error fetching events:", eventsError);
-      } else {
-        const list = eventsData || [];
+      if (eventsResult.success && eventsResult.data) {
+        const list = eventsResult.data;
         setEvents(list);
         // compute deterministic SHA-256 of trace
         if (list.length > 0) {
@@ -89,6 +90,10 @@ export default function ConsumerBatchPage() {
         } else {
           setComputedHash(null);
         }
+      } else {
+        console.error("Error fetching events:", eventsResult.error);
+        setEvents([]);
+        setComputedHash(null);
       }
 
       // Fetch blockchain proof
@@ -114,105 +119,176 @@ export default function ConsumerBatchPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-6xl mx-auto space-y-8">
+          <div className="text-center space-y-4">
+            <Skeleton className="h-12 w-64 mx-auto" />
+            <Skeleton className="h-6 w-96 mx-auto" />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-6">
+            <Skeleton className="h-96" />
+            <Skeleton className="h-96" />
+            <Skeleton className="h-96" />
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error || !batch) {
     return (
-      <div className="max-w-2xl mx-auto text-center space-y-8">
-        <AlertTriangle className="w-16 h-16 text-red-600 mx-auto" />
-        <h1 className="text-3xl font-bold text-gray-900">Batch Not Found</h1>
-        <p className="text-lg text-gray-600">
-          The batch ID you&apos;re looking for doesn&apos;t exist or has been
-          removed.
-        </p>
-        <Link href="/verify">
-          <Button className="bg-green-600 hover:bg-green-700">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Verification
-          </Button>
-        </Link>
+      <div className="container mx-auto px-4 py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-2xl mx-auto text-center space-y-8"
+        >
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-100 mx-auto">
+            <AlertTriangle className="w-12 h-12 text-red-600" />
+          </div>
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-3">Batch Not Found</h1>
+            <p className="text-xl text-gray-600">
+              The batch ID you're looking for doesn't exist or has been removed from our system.
+            </p>
+          </div>
+          <Link href="/verify">
+            <Button size="lg" className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white shadow-lg">
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Back to Verification
+            </Button>
+          </Link>
+        </motion.div>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="text-center space-y-4">
-        <div className="flex items-center justify-center space-x-2">
-          <Shield className="w-8 h-8 text-green-600" />
-          <h1 className="text-3xl font-bold text-gray-900">
-            Product Verification
-          </h1>
-        </div>
-        <p className="text-lg text-gray-600">
-          Verified blockchain traceability for batch {batch.batch_id}
-        </p>
-        <Link href="/verify">
-          <Button variant="outline">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Verify Another Product
-          </Button>
-        </Link>
-      </div>
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toast.success("Link copied to clipboard!");
+  };
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        {/* Product Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Product Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-gray-500">
-                Batch ID
-              </label>
-              <p className="text-lg font-mono bg-gray-100 p-2 rounded">
-                {batch.batch_id}
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Crop</label>
-              <p className="text-lg">{batch.crop_name}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">
-                Origin
-              </label>
-              <p className="text-lg">{batch.location}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">
-                Harvest Date
-              </label>
-              <p className="text-lg">{formatDate(batch.harvest_date)}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">
-                Quantity
-              </label>
-              <p className="text-lg">
-                {batch.quantity} {batch.unit}
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">
-                Status
-              </label>
-              <span
-                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                  batch.status
-                )}`}
-              >
-                {batch.status.toUpperCase()}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Batch ${batch.batch_id} Verification`,
+          text: `Check out the verified supply chain for ${batch.crop_name}`,
+          url: window.location.href
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    }
+  };
+
+  const isVerified = computedHash && blockchainProof?.hash &&
+    computedHash.toLowerCase() === blockchainProof.hash.toLowerCase();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="container mx-auto px-4 py-12"
+    >
+      <div className="max-w-6xl mx-auto space-y-12">
+        {/* Verification Header */}
+        <div className="text-center space-y-6">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", duration: 0.6 }}
+            className={`inline-flex items-center justify-center w-24 h-24 rounded-full shadow-lg mx-auto ${
+              isVerified ? "bg-gradient-to-br from-emerald-500 to-green-600 glow-green" : "bg-gradient-to-br from-amber-500 to-orange-600"
+            }`}
+          >
+            {isVerified ? (
+              <CheckCircle className="w-14 h-14 text-white" />
+            ) : (
+              <Shield className="w-14 h-14 text-white" />
+            )}
+          </motion.div>
+
+          <div>
+            <Badge variant={isVerified ? "success" : "warning"} className="mb-3">
+              {isVerified ? (
+                <>
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  Blockchain Verified
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Limited Verification
+                </>
+              )}
+            </Badge>
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3">
+              Product <span className="gradient-text">Verification</span>
+            </h1>
+            <p className="text-xl text-gray-600">
+              Complete supply chain traceability for {batch.crop_name}
+            </p>
+          </div>
+
+          <Link href="/verify">
+            <Button variant="outline" size="lg">
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Verify Another Product
+            </Button>
+          </Link>
+        </div>
+
+        {/* Product Information & Blockchain Proof Grid */}
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Product Information */}
+          <Card className="glass border-0 shadow-soft hover-lift">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-emerald-600" />
+                Product Information
+              </CardTitle>
+              <CardDescription>Verified product details</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Batch ID</label>
+                <code className="block text-sm font-mono bg-gray-100 px-3 py-2 rounded-lg text-gray-800 break-all">
+                  {batch.batch_id}
+                </code>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Crop</label>
+                <p className="text-lg font-semibold text-gray-900">{batch.crop_name}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  Origin
+                </label>
+                <p className="text-base text-gray-700">{batch.location}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  Harvest Date
+                </label>
+                <p className="text-base text-gray-700">{formatDate(batch.harvest_date)}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quantity</label>
+                <p className="text-lg font-semibold text-gray-900">{batch.quantity} {batch.unit}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</label>
+                <div>
+                  <Badge variant={batch.status === "active" ? "success" : batch.status === "recalled" ? "destructive" : "default"}>
+                    {batch.status.toUpperCase()}
+                  </Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
         {/* Blockchain Proof */}
         <Card>

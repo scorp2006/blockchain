@@ -1,13 +1,15 @@
-import { supabase } from '@/lib/supabase'
+import { createTraceEvent } from '@/lib/firebase'
 
 export async function logTraceEvent(batchId: string, eventData: any) {
-  const { data, error } = await supabase
-    .from('trace_events')
-    .insert([{ batch_id: batchId, ...eventData }])
-    .select()
-  if (error) {
-    console.error('Error logging trace event:', error)
-    return { success: false, error }
+  const result = await createTraceEvent({
+    batch_id: batchId,
+    ...eventData
+  })
+
+  if (!result.success) {
+    console.error('Error logging trace event:', result.error)
+    return { success: false, error: result.error }
   }
-  return { success: true, data }
+
+  return { success: true, data: { id: result.id, batch_id: batchId, ...eventData } }
 }

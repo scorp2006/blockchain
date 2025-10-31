@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { supabase, type Batch, type TraceEvent } from "@/lib/supabase";
+import { getBatchByBatchId, getTraceEventsByBatchId, type Batch, type TraceEvent } from "@/lib/firebase";
 import { formatDate, getEventTypeIcon, getStatusColor } from "@/lib/utils";
 import { getRecord } from "@/lib/blockchain";
 import { VideoDebug } from "@/components/VideoDebug";
@@ -140,14 +140,10 @@ export default function VerifyPage() {
     setEventsError(null);
 
     try {
-      // Fetch batch data
-      const { data: batchData, error: batchError } = await supabase
-        .from("batches")
-        .select("*")
-        .eq("batch_id", batchId)
-        .single();
+      // Fetch batch data from Firebase
+      const batchResult = await getBatchByBatchId(batchId);
 
-      if (batchError || !batchData) {
+      if (!batchResult.success || !batchResult.data) {
         setError("Batch not found");
         setBatch(null);
         setEvents([]);
@@ -156,20 +152,16 @@ export default function VerifyPage() {
       }
 
       setScannedBatchId(batchId);
-      setBatch(batchData);
+      setBatch(batchResult.data);
 
-      // Fetch trace events
-      const { data: eventsData, error: eventsErrorObj } = await supabase
-        .from("trace_events")
-        .select("*")
-        .eq("batch_id", batchId)
-        .order("timestamp", { ascending: true });
+      // Fetch trace events from Firebase
+      const eventsResult = await getTraceEventsByBatchId(batchId);
 
-      if (eventsErrorObj) {
+      if (!eventsResult.success) {
         setEventsError("Error fetching trace events");
         setEvents([]);
       } else {
-        setEvents(eventsData || []);
+        setEvents(eventsResult.data || []);
       }
 
       // Fetch blockchain proof

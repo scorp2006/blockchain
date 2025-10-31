@@ -4,23 +4,30 @@ import { useState, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { supabase, type Batch } from '@/lib/supabase'
+import { Badge } from '@/components/ui/badge'
+import { createBatch, getSampleFarmer, createTraceEvent, type Batch } from '@/lib/firebase'
 import { generateBatchId, formatDate } from '@/lib/utils'
 import { generateBatchHash } from '@/lib/blockchain'
 import { QRCodeCanvas } from 'qrcode.react'
-import { 
-  Wheat, 
-  MapPin, 
-  Calendar, 
-  Package, 
+import {
+  Wheat,
+  MapPin,
+  Calendar,
+  Package,
   CheckCircle,
   Loader2,
-  Download
+  Download,
+  Sparkles,
+  Share2,
+  Copy,
+  Check
 } from 'lucide-react'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { createCropBatch } from './create-crop'
 import { logTraceEvent } from '@/app/event/log-trace'
 import jsQR from 'jsqr'
+import { toast } from 'sonner'
+import { motion } from 'framer-motion'
 
 interface BatchFormData {
   cropName: string
@@ -41,8 +48,32 @@ export default function FarmerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [createdBatch, setCreatedBatch] = useState<Batch | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  const handleCopy = () => {
+    if (createdBatch) {
+      navigator.clipboard.writeText(createdBatch.qr_code)
+      setCopied(true)
+      toast.success('QR Code URL copied to clipboard!')
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const handleShare = async () => {
+    if (createdBatch && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Batch ${createdBatch.batch_id}`,
+          text: `Check out my crop batch: ${createdBatch.crop_name}`,
+          url: createdBatch.qr_code
+        })
+      } catch (err) {
+        console.log('Share cancelled')
+      }
+    }
+  }
 
   const handleInputChange = (field: keyof BatchFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -80,35 +111,27 @@ export default function FarmerPage() {
         farmerId: '550e8400-e29b-41d4-a716-446655440001'
       })
 
-      // Insert into Supabase
-      const { data, error: insertError } = await supabase
-        .from('batches')
-        .insert([batchData])
-        .select()
-        .single()
+      // Insert into Firebase
+      const result = await createBatch(batchData)
 
-      if (insertError) throw insertError
+      if (!result.success) throw new Error('Failed to create batch')
 
-      // (Optional) create initial harvest event
-      const { error: eventError } = await supabase
-        .from('trace_events')
-        .insert([
-          {
-            batch_id: batchId,
-            event_type: 'harvest',
-            actor_id: '550e8400-e29b-41d4-a716-446655440001',
-            actor_role: 'farmer',
-            location: formData.location,
-            timestamp: new Date().toISOString(),
-            notes: 'Initial harvest event'
-          }
-        ])
+      // Create initial harvest event
+      const eventResult = await createTraceEvent({
+        batch_id: batchId,
+        event_type: 'harvest',
+        actor_id: '550e8400-e29b-41d4-a716-446655440001',
+        actor_role: 'farmer',
+        location: formData.location,
+        timestamp: new Date().toISOString(),
+        notes: 'Initial harvest event'
+      })
 
-      if (eventError) {
-        console.error('Error creating harvest event:', eventError)
+      if (!eventResult.success) {
+        console.error('Error creating harvest event:', eventResult.error)
       }
 
-      setCreatedBatch(data)
+      setCreatedBatch({ ...batchData, id: result.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
 
       // Reset form
       setFormData({
@@ -119,9 +142,12 @@ export default function FarmerPage() {
         unit: 'kg'
       })
 
+      toast.success('Batch created successfully! 🎉')
     } catch (err) {
       console.error('Error creating batch:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create batch')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create batch'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -174,200 +200,312 @@ export default function FarmerPage() {
 
   if (createdBatch) {
     return (
-      <div className="max-w-4xl mx-auto space-y-8">
-        <div className="text-center space-y-4">
-          <CheckCircle className="w-16 h-16 text-green-600 mx-auto" />
-          <h1 className="text-3xl font-bold text-gray-900">Batch Created Successfully!</h1>
-          <p className="text-lg text-gray-600">
-            Your crop batch has been registered and is ready for tracking.
-          </p>
-        </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="container mx-auto px-4 py-12"
+      >
+        <div className="max-w-5xl mx-auto space-y-8">
+          {/* Success Header */}
+          <div className="text-center space-y-6">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", duration: 0.6 }}
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg glow-green mx-auto"
+            >
+              <CheckCircle className="w-12 h-12 text-white" />
+            </motion.div>
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3">
+                Batch Created Successfully!
+              </h1>
+              <p className="text-xl text-gray-600">
+                Your crop batch is now registered and ready for blockchain tracking
+              </p>
+              <Badge variant="success" className="mt-4">
+                <Sparkles className="w-3 h-3 mr-1" />
+                Batch ID: {createdBatch.batch_id}
+              </Badge>
+            </div>
+          </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Batch Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-500">Batch ID</label>
-                <p className="text-lg font-mono bg-gray-100 p-2 rounded">{createdBatch.batch_id}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Crop</label>
-                <p className="text-lg">{createdBatch.crop_name}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Location</label>
-                <p className="text-lg">{createdBatch.location}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Harvest Date</label>
-                <p className="text-lg">{formatDate(createdBatch.harvest_date)}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Quantity</label>
-                <p className="text-lg">{createdBatch.quantity} {createdBatch.unit}</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Main Content Grid */}
+          <div className="grid lg:grid-cols-2 gap-8">
+            {/* Batch Details */}
+            <Card className="glass border-0 hover-lift">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-emerald-600" />
+                  Batch Details
+                </CardTitle>
+                <CardDescription>Complete information about your batch</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Crop Name</label>
+                    <p className="text-lg font-semibold text-gray-900">{createdBatch.crop_name}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quantity</label>
+                    <p className="text-lg font-semibold text-gray-900">{createdBatch.quantity} {createdBatch.unit}</p>
+                  </div>
+                </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>QR Code</CardTitle>
-              <CardDescription>
-                Share this QR code with supply chain partners for tracking
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center space-y-4">
-              <div className="flex justify-center">
-                <QRCodeCanvas
-                  id="qr-code"
-                  value={createdBatch.qr_code}
-                  size={200}
-                  level="M"
-                  includeMargin={true}
-                />
-              </div>
-              <Button onClick={downloadQR} variant="outline">
-                <Download className="w-4 h-4 mr-2" />
-                Download QR Code
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    Location
+                  </label>
+                  <p className="text-base text-gray-700">{createdBatch.location}</p>
+                </div>
 
-        <div className="text-center">
-          <Button 
-            onClick={() => setCreatedBatch(null)}
-            variant="outline"
-          >
-            Create Another Batch
-          </Button>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    Harvest Date
+                  </label>
+                  <p className="text-base text-gray-700">{formatDate(createdBatch.harvest_date)}</p>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Batch ID</label>
+                  <div className="flex items-center gap-2 mt-2">
+                    <code className="flex-1 text-sm font-mono bg-gray-100 px-3 py-2 rounded-lg text-gray-800">
+                      {createdBatch.batch_id}
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopy}
+                      className="flex-shrink-0"
+                    >
+                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* QR Code */}
+            <Card className="glass border-0 hover-lift">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-emerald-600" />
+                  QR Code
+                </CardTitle>
+                <CardDescription>
+                  Share with partners or print for product labeling
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex justify-center">
+                  <div className="p-6 bg-white rounded-2xl shadow-lg border-2 border-emerald-100">
+                    <QRCodeCanvas
+                      id="qr-code"
+                      value={createdBatch.qr_code}
+                      size={220}
+                      level="H"
+                      includeMargin={true}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Button onClick={downloadQR} className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600">
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                  {navigator.share && (
+                    <Button onClick={handleShare} variant="outline">
+                      <Share2 className="w-4 h-4 mr-2" />
+                      Share
+                    </Button>
+                  )}
+                </div>
+
+                <div className="text-xs text-gray-500 text-center">
+                  QR code encodes: <span className="font-mono text-gray-700">{createdBatch.qr_code}</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-center gap-4 pt-4">
+            <Button
+              onClick={() => setCreatedBatch(null)}
+              size="lg"
+              className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white shadow-lg hover:shadow-xl transition-all"
+            >
+              <Wheat className="w-5 h-5 mr-2" />
+              Create Another Batch
+            </Button>
+            <Button size="lg" variant="outline" onClick={() => window.location.href = '/dashboard'}>
+              View Dashboard
+            </Button>
+          </div>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   return (
     <ProtectedRoute allowedRoles={['farmer']}>
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center space-y-4 mb-8">
-          <Wheat className="w-16 h-16 text-green-600 mx-auto" />
-          <h1 className="text-3xl font-bold text-gray-900">Create New Crop Batch</h1>
-          <p className="text-lg text-gray-600">
-            Register your agricultural produce for blockchain tracking
-          </p>
-        </div>
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-3xl mx-auto space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg mx-auto">
+              <Wheat className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3">
+                Create New <span className="gradient-text">Crop Batch</span>
+              </h1>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                Register your agricultural produce for blockchain-verified tracking
+              </p>
+            </div>
+            <Badge variant="outline">
+              <Sparkles className="w-3 h-3 mr-1" />
+              Blockchain Secured
+            </Badge>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Batch Information</CardTitle>
-            <CardDescription>
-              Fill in the details of your crop batch to start tracking
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Crop Name *
-                </label>
-                <Input
-                  type="text"
-                  placeholder="e.g., Organic Tomatoes"
-                  value={formData.cropName}
-                  onChange={(e) => handleInputChange('cropName', e.target.value)}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <MapPin className="w-4 h-4 inline mr-1" />
-                  Farm Location *
-                </label>
-                <Input
-                  type="text"
-                  placeholder="e.g., Green Valley Farm, California"
-                  value={formData.location}
-                  onChange={(e) => handleInputChange('location', e.target.value)}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Calendar className="w-4 h-4 inline mr-1" />
-                  Harvest Date *
-                </label>
-                <Input
-                  type="date"
-                  value={formData.harvestDate}
-                  onChange={(e) => handleInputChange('harvestDate', e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Package className="w-4 h-4 inline mr-1" />
-                    Quantity *
+          {/* Form Card */}
+          <Card className="glass border-0 shadow-strong">
+            <CardHeader>
+              <CardTitle className="text-2xl">Batch Information</CardTitle>
+              <CardDescription className="text-base">
+                Fill in the details of your crop batch to start tracking its journey
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Crop Name */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <Wheat className="w-4 h-4 text-emerald-600" />
+                    Crop Name *
                   </label>
                   <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="100"
-                    value={formData.quantity}
-                    onChange={(e) => handleInputChange('quantity', e.target.value)}
+                    type="text"
+                    placeholder="e.g., Organic Tomatoes"
+                    value={formData.cropName}
+                    onChange={(e) => handleInputChange('cropName', e.target.value)}
                     required
+                    className="h-12 text-base focus-ring"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Unit
+
+                {/* Farm Location */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <MapPin className="w-4 h-4 text-blue-600" />
+                    Farm Location *
                   </label>
-                  <select
-                    className="w-full h-10 px-3 py-2 border border-input bg-background rounded-md text-sm"
-                    value={formData.unit}
-                    onChange={(e) => handleInputChange('unit', e.target.value)}
+                  <Input
+                    type="text"
+                    placeholder="e.g., Green Valley Farm, California"
+                    value={formData.location}
+                    onChange={(e) => handleInputChange('location', e.target.value)}
+                    required
+                    className="h-12 text-base focus-ring"
+                  />
+                </div>
+
+                {/* Harvest Date */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <Calendar className="w-4 h-4 text-purple-600" />
+                    Harvest Date *
+                  </label>
+                  <Input
+                    type="date"
+                    value={formData.harvestDate}
+                    onChange={(e) => handleInputChange('harvestDate', e.target.value)}
+                    required
+                    className="h-12 text-base focus-ring"
+                  />
+                </div>
+
+                {/* Quantity and Unit */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <Package className="w-4 h-4 text-orange-600" />
+                      Quantity *
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="100"
+                      value={formData.quantity}
+                      onChange={(e) => handleInputChange('quantity', e.target.value)}
+                      required
+                      className="h-12 text-base focus-ring"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Unit
+                    </label>
+                    <select
+                      className="w-full h-12 px-4 py-2 border border-input bg-background rounded-lg text-base focus-ring transition-all"
+                      value={formData.unit}
+                      onChange={(e) => handleInputChange('unit', e.target.value)}
+                    >
+                      <option value="kg">Kilograms (kg)</option>
+                      <option value="lbs">Pounds (lbs)</option>
+                      <option value="tons">Tons</option>
+                      <option value="boxes">Boxes</option>
+                      <option value="crates">Crates</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Error Message */}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4"
                   >
-                    <option value="kg">Kilograms (kg)</option>
-                    <option value="lbs">Pounds (lbs)</option>
-                    <option value="tons">Tons</option>
-                    <option value="boxes">Boxes</option>
-                    <option value="crates">Crates</option>
-                  </select>
-                </div>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                  <p className="text-red-800 text-sm">{error}</p>
-                </div>
-              )}
-
-              <Button 
-                type="submit" 
-                className="w-full bg-green-600 hover:bg-green-700"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Creating Batch...
-                  </>
-                ) : (
-                  <>
-                    <Wheat className="w-4 h-4 mr-2" />
-                    Create Batch
-                  </>
+                    <p className="text-red-800 text-sm font-medium">{error}</p>
+                  </motion.div>
                 )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+
+                {/* Submit Button */}
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full h-14 text-lg bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white shadow-lg hover:shadow-xl transition-all"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Creating Batch...
+                    </>
+                  ) : (
+                    <>
+                      <Wheat className="w-5 h-5 mr-2" />
+                      Create Batch & Generate QR Code
+                    </>
+                  )}
+                </Button>
+
+                {/* Info Text */}
+                <p className="text-sm text-gray-500 text-center">
+                  By creating a batch, you agree to store this information on the blockchain for transparency
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </ProtectedRoute>
   )
