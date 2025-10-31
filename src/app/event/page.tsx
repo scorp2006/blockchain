@@ -8,11 +8,14 @@ import { getBatchByBatchId, createTraceEvent, type Batch } from '@/lib/firebase'
 import { formatDate } from '@/lib/utils'
 import { generateEventHash } from '@/lib/blockchain'
 import QrScanner from 'qr-scanner'
-import { 
-  QrCode, 
-  Camera, 
-  Truck, 
-  MapPin, 
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { useAuth } from '@/hooks/useAuth'
+import { toast } from 'sonner'
+import {
+  QrCode,
+  Camera,
+  Truck,
+  MapPin,
   Thermometer,
   Droplets,
   FileText,
@@ -30,6 +33,7 @@ interface EventFormData {
 }
 
 export default function EventPage() {
+  const { user } = useAuth()
   const [scannedBatchId, setScannedBatchId] = useState<string | null>(null)
   const [batch, setBatch] = useState<Batch | null>(null)
   const [isScanning, setIsScanning] = useState(false)
@@ -142,14 +146,13 @@ export default function EventPage() {
 
   const fetchBatch = async (batchId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('batches')
-        .select('*')
-        .eq('batch_id', batchId)
-        .single()
+      const result = await getBatchByBatchId(batchId)
 
-      if (error) throw error
-      setBatch(data)
+      if (!result.success || !result.data) {
+        throw new Error('Batch not found')
+      }
+
+      setBatch(result.data)
     } catch (err) {
       console.error('Error fetching batch:', err)
       setError('Batch not found. Please scan a valid QR code.')
@@ -163,46 +166,57 @@ export default function EventPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!batch || !scannedBatchId) return
+    if (!batch || !scannedBatchId || !user) return
 
     setIsSubmitting(true)
     setError(null)
 
     try {
-      const eventData = {
+      // Build event data object, only include optional fields if they have values
+      const eventData: any = {
         batch_id: scannedBatchId,
         event_type: formData.eventType as 'harvest' | 'transport' | 'processing' | 'storage' | 'retail',
-        actor_id: '550e8400-e29b-41d4-a716-446655440002',
-        actor_role: 'aggregator' as 'farmer' | 'aggregator' | 'retailer' | 'consumer',
+        actor_id: user.id,
+        actor_role: user.role,
         location: formData.location,
         timestamp: new Date().toISOString(),
-        temperature: formData.temperature ? parseFloat(formData.temperature) : null,
-        humidity: formData.humidity ? parseFloat(formData.humidity) : null,
-        notes: formData.notes
+        notes: formData.notes || ''
+      }
+
+      // Only add temperature if provided
+      if (formData.temperature && formData.temperature.trim() !== '') {
+        eventData.temperature = parseFloat(formData.temperature)
+      }
+
+      // Only add humidity if provided
+      if (formData.humidity && formData.humidity.trim() !== '') {
+        eventData.humidity = parseFloat(formData.humidity)
       }
 
       generateEventHash({
         batchId: scannedBatchId,
         eventType: formData.eventType,
-        actorId: '550e8400-e29b-41d4-a716-446655440002',
+        actorId: user.id,
         location: formData.location,
         timestamp: eventData.timestamp,
-        temperature: eventData.temperature || undefined,
-        humidity: eventData.humidity || undefined
+        temperature: eventData.temperature,
+        humidity: eventData.humidity
       })
 
-      const { error: insertError } = await supabase
-        .from('trace_events')
-        .insert([eventData])
-        .select()
+      const result = await createTraceEvent(eventData)
 
-      if (insertError) throw insertError
+      if (!result.success) {
+        throw new Error('Failed to create trace event')
+      }
 
+      toast.success('Trace event logged successfully! 🎉')
       setSuccess(true)
       setFormData({ eventType: 'transport', location: '', temperature: '', humidity: '', notes: '' })
     } catch (err) {
       console.error('Error creating event:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create event')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create event'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -242,7 +256,8 @@ export default function EventPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <ProtectedRoute allowedRoles={['aggregator', 'retailer']}>
+      <div className="max-w-4xl mx-auto space-y-8">
       <div className="text-center space-y-4">
         <Truck className="w-16 h-16 text-blue-600 mx-auto" />
         <h1 className="text-3xl font-bold text-gray-900">Log Trace Event</h1>
@@ -457,6 +472,7 @@ export default function EventPage() {
           </Card>
         </div>
       )}
-    </div>
+      </div>
+    </ProtectedRoute>
   )
 }

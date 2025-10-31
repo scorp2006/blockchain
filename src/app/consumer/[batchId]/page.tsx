@@ -507,6 +507,7 @@ export default function ConsumerBatchPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

@@ -23,6 +23,7 @@ import {
   Check
 } from 'lucide-react'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { useAuth } from '@/hooks/useAuth'
 import { createCropBatch } from './create-crop'
 import { logTraceEvent } from '@/app/event/log-trace'
 import jsQR from 'jsqr'
@@ -38,6 +39,7 @@ interface BatchFormData {
 }
 
 export default function FarmerPage() {
+  const { user } = useAuth()
   const [formData, setFormData] = useState<BatchFormData>({
     cropName: '',
     location: '',
@@ -81,17 +83,19 @@ export default function FarmerPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user) return
+
     setIsSubmitting(true)
     setError(null)
 
     try {
       // Generate unique batch ID
       const batchId = generateBatchId()
-      
+
       // Create batch data
       const batchData = {
         batch_id: batchId,
-        farmer_id: '550e8400-e29b-41d4-a716-446655440001', // Demo farmer ID
+        farmer_id: user.id,
         crop_name: formData.cropName,
         location: formData.location,
         harvest_date: formData.harvestDate,
@@ -108,7 +112,7 @@ export default function FarmerPage() {
         location: formData.location,
         harvestDate: formData.harvestDate,
         quantity: parseFloat(formData.quantity),
-        farmerId: '550e8400-e29b-41d4-a716-446655440001'
+        farmerId: user.id
       })
 
       // Insert into Firebase
@@ -120,7 +124,7 @@ export default function FarmerPage() {
       const eventResult = await createTraceEvent({
         batch_id: batchId,
         event_type: 'harvest',
-        actor_id: '550e8400-e29b-41d4-a716-446655440001',
+        actor_id: user.id,
         actor_role: 'farmer',
         location: formData.location,
         timestamp: new Date().toISOString(),

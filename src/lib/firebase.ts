@@ -113,17 +113,24 @@ export const createBatch = async (batchData: Omit<Batch, 'id' | 'created_at' | '
 
 export const getBatchByBatchId = async (batchId: string) => {
   try {
+    // Fetch all batches and filter client-side (works without Firebase index)
     const batchesRef = ref(db, 'batches');
-    const q = query(batchesRef, orderByChild('batch_id'), equalTo(batchId));
-    const snapshot = await get(q);
+    const snapshot = await get(batchesRef);
 
     if (!snapshot.exists()) {
-      return { success: false, error: 'Batch not found' };
+      return { success: false, error: 'No batches found in database' };
     }
 
-    const batches = snapshot.val();
-    const batchKey = Object.keys(batches)[0];
-    return { success: true, data: { id: batchKey, ...batches[batchKey] } as Batch };
+    const batchesData = snapshot.val();
+
+    // Find the batch with matching batch_id
+    for (const key in batchesData) {
+      if (batchesData[key].batch_id === batchId) {
+        return { success: true, data: { id: key, ...batchesData[key] } as Batch };
+      }
+    }
+
+    return { success: false, error: 'Batch not found' };
   } catch (error) {
     console.error('Error getting batch:', error);
     return { success: false, error };
@@ -154,24 +161,29 @@ export const getAllBatches = async () => {
 
 export const updateBatchStatus = async (batchId: string, status: 'active' | 'recalled' | 'completed') => {
   try {
+    // Fetch all batches and find the one to update
     const batchesRef = ref(db, 'batches');
-    const q = query(batchesRef, orderByChild('batch_id'), equalTo(batchId));
-    const snapshot = await get(q);
+    const snapshot = await get(batchesRef);
 
     if (!snapshot.exists()) {
-      return { success: false, error: 'Batch not found' };
+      return { success: false, error: 'No batches found' };
     }
 
-    const batches = snapshot.val();
-    const batchKey = Object.keys(batches)[0];
-    const batchRef = ref(db, `batches/${batchKey}`);
+    const batchesData = snapshot.val();
 
-    await update(batchRef, {
-      status,
-      updated_at: new Date().toISOString()
-    });
+    // Find the batch with matching batch_id
+    for (const key in batchesData) {
+      if (batchesData[key].batch_id === batchId) {
+        const batchRef = ref(db, `batches/${key}`);
+        await update(batchRef, {
+          status,
+          updated_at: new Date().toISOString()
+        });
+        return { success: true };
+      }
+    }
 
-    return { success: true };
+    return { success: false, error: 'Batch not found' };
   } catch (error) {
     console.error('Error updating batch status:', error);
     return { success: false, error };
@@ -195,19 +207,26 @@ export const createTraceEvent = async (eventData: Omit<TraceEvent, 'id' | 'creat
 
 export const getTraceEventsByBatchId = async (batchId: string) => {
   try {
+    // Fetch all events and filter client-side
     const eventsRef = ref(db, 'trace_events');
-    const q = query(eventsRef, orderByChild('batch_id'), equalTo(batchId));
-    const snapshot = await get(q);
+    const snapshot = await get(eventsRef);
 
     if (!snapshot.exists()) {
       return { success: true, data: [] };
     }
 
     const eventsData = snapshot.val();
-    const events = Object.keys(eventsData).map(key => ({
-      id: key,
-      ...eventsData[key]
-    } as TraceEvent));
+    const events: TraceEvent[] = [];
+
+    // Filter events by batch_id
+    for (const key in eventsData) {
+      if (eventsData[key].batch_id === batchId) {
+        events.push({
+          id: key,
+          ...eventsData[key]
+        } as TraceEvent);
+      }
+    }
 
     // Sort by timestamp
     events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -236,17 +255,24 @@ export const createBlockchainAnchor = async (anchorData: Omit<BlockchainAnchor, 
 
 export const getBlockchainAnchorByBatchId = async (batchId: string) => {
   try {
+    // Fetch all anchors and filter client-side
     const anchorsRef = ref(db, 'blockchain_anchors');
-    const q = query(anchorsRef, orderByChild('batch_id'), equalTo(batchId));
-    const snapshot = await get(q);
+    const snapshot = await get(anchorsRef);
 
     if (!snapshot.exists()) {
       return { success: false, error: 'Blockchain anchor not found' };
     }
 
-    const anchors = snapshot.val();
-    const anchorKey = Object.keys(anchors)[0];
-    return { success: true, data: { id: anchorKey, ...anchors[anchorKey] } as BlockchainAnchor };
+    const anchorsData = snapshot.val();
+
+    // Find the anchor with matching batch_id
+    for (const key in anchorsData) {
+      if (anchorsData[key].batch_id === batchId) {
+        return { success: true, data: { id: key, ...anchorsData[key] } as BlockchainAnchor };
+      }
+    }
+
+    return { success: false, error: 'Blockchain anchor not found' };
   } catch (error) {
     console.error('Error getting blockchain anchor:', error);
     return { success: false, error };

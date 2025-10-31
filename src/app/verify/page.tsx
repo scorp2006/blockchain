@@ -15,6 +15,7 @@ import { getBatchByBatchId, getTraceEventsByBatchId, type Batch, type TraceEvent
 import { formatDate, getEventTypeIcon, getStatusColor } from "@/lib/utils";
 import { getRecord } from "@/lib/blockchain";
 import { VideoDebug } from "@/components/VideoDebug";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import {
   QrCode,
   Camera,
@@ -428,7 +429,8 @@ export default function VerifyPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <ProtectedRoute allowedRoles={['consumer']}>
+      <div className="max-w-2xl mx-auto">
       <div className="text-center space-y-4 mb-8">
         <Search className="w-16 h-16 text-green-600 mx-auto" />
         <h1 className="text-3xl font-bold text-gray-900">Verify Product</h1>
@@ -542,6 +544,7 @@ export default function VerifyPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

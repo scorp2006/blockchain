@@ -19,11 +19,11 @@ import {
 import { useState } from 'react'
 
 const navigation = [
-  { name: 'Home', href: '/', icon: Home },
-  { name: 'Farmer', href: '/farmer', icon: Wheat },
-  { name: 'Trace Event', href: '/event', icon: Truck },
-  { name: 'Verify', href: '/verify', icon: Search },
-  { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
+  { name: 'Home', href: '/', icon: Home, roles: ['farmer', 'aggregator', 'retailer', 'consumer'] },
+  { name: 'Farmer', href: '/farmer', icon: Wheat, roles: ['farmer'] },
+  { name: 'Trace Event', href: '/event', icon: Truck, roles: ['aggregator', 'retailer'] },
+  { name: 'Verify', href: '/verify', icon: Search, roles: ['consumer'] },
+  { name: 'Dashboard', href: '/dashboard', icon: BarChart3, roles: ['farmer', 'aggregator', 'retailer'] },
 ]
 
 export function Navbar() {
@@ -36,6 +36,11 @@ export function Navbar() {
     logout()
     router.push('/auth')
   }
+
+  // Filter navigation items based on user role
+  const visibleNavigation = user
+    ? navigation.filter(item => item.roles.includes(user.role))
+    : navigation
 
   return (
     <nav className="sticky top-0 z-50 glass border-b border-white/20 shadow-soft">
@@ -51,7 +56,7 @@ export function Navbar() {
 
           {/* Desktop Navigation Links */}
           <div className="hidden md:flex items-center space-x-1">
-            {navigation.map((item) => {
+            {visibleNavigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
 
@@ -123,7 +128,7 @@ export function Navbar() {
         {mobileMenuOpen && (
           <div className="md:hidden pb-4 animate-fadeIn">
             <div className="flex flex-col space-y-2">
-              {navigation.map((item) => {
+              {visibleNavigation.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
 

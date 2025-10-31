@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { getAllBatches, getTraceEventsByBatchId, updateBatchStatus, type Batch, type TraceEvent } from "@/lib/firebase";
 import { formatDate } from "@/lib/utils";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import {
   Package,
   AlertTriangle,
@@ -172,11 +173,12 @@ export default function DashboardPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="space-y-8 pb-20"
-    >
+    <ProtectedRoute allowedRoles={['farmer', 'aggregator', 'retailer']}>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="space-y-8 pb-20"
+      >
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -572,6 +574,7 @@ export default function DashboardPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+      </motion.div>
+    </ProtectedRoute>
   );
 }
